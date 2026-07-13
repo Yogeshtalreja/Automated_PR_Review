@@ -11,6 +11,7 @@ import java.util.List;
 public class OllamaChatRequest {
 
     private String model;
+    private String format;
     private boolean stream;
     private List<Message> messages;
 
@@ -21,5 +22,4 @@ public class OllamaChatRequest {
         private String content;
     }
 }
-
 

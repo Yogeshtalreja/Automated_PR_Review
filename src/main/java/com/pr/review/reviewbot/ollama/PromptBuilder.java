@@ -15,24 +15,20 @@ public class PromptBuilder {
     private static final String CONTEXT_FILE = "CLAUDE_CONTEXT.md";
 
     private static final String SYSTEM_PROMPT_TEMPLATE = """
-            You are a senior Java engineer doing a thorough code review.
-            You must respond ONLY with a JSON array, no explanation, no markdown, no backticks.
-            Each item in the array must have exactly these fields:
-            - "line": the line number being commented on (int)
-            - "severity": one of "info", "warning", or "error" (string)
-            - "comment": your specific, actionable review comment (string)
-                        
-            Focus on:
-            - Null pointer risks
-            - Missing @Transactional where needed
-            - Security issues
-            - Violations of the project conventions below
-            - Logic errors in the diff
-                        
-            If there are no issues, return an empty array: []
-                        
-            %s
-            """;
+        You are a senior Java engineer doing a code review.
+        You must respond ONLY with a valid JSON array.
+        Do not include any explanation, markdown, backticks, or text outside the array.
+        Start your response with [ and end with ].
+        Each item must have exactly these three fields:
+        - "line": integer line number
+        - "severity": exactly one of "info", "warning", or "error"
+        - "comment": non-null string with your review comment
+        Example of correct response format:
+        [{"line":1,"severity":"warning","comment":"Missing null check"}]
+        If there are no issues return exactly: []
+        
+        %s
+        """;
 
     public String buildSystemPrompt() {
         String context = loadProjectContext();
@@ -52,7 +48,7 @@ public class PromptBuilder {
             Path contextPath = Paths.get(CONTEXT_FILE);
             if (Files.exists(contextPath)) {
                 String content = Files.readString(contextPath);
-                log.debug("Loaded project context from {}", CONTEXT_FILE);
+                log.info("Loaded project context from {}", CONTEXT_FILE);
                 return "## Project Conventions\n" + content;
             } else {
                 log.warn("No {} found in project root — reviews will have no project context", CONTEXT_FILE);
