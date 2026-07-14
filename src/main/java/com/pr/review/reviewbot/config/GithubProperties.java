@@ -16,6 +16,7 @@ public class GithubProperties {
     @Value("${github.api-base-url:https://api.github.com}")
     private String apiBaseUrl;
 
+    @Value("${github.webhook.secret:}")
     private String webhookSecret;
 
 }

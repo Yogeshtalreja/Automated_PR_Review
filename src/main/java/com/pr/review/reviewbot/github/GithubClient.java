@@ -2,7 +2,6 @@ package com.pr.review.reviewbot.github;
 
 
 import com.pr.review.reviewbot.PullRequestFile;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -48,6 +47,28 @@ public class GithubClient {
         }
 
         return files;
+    }
+
+
+    public void postReview(String owner, String repo, int prNumber, GithubReviewRequest review){
+
+        try {
+            githubWebClient.post()
+                    .uri("/repos/{owner}/{repo}/pulls/{pr}/reviews",
+                            owner, repo, prNumber)
+                    .bodyValue(review)
+                    .retrieve()
+                    .onStatus(status -> status.value() == 422,
+                            r -> Mono.error(new RuntimeException(
+                                    "Invalid review — check diff positions")))
+                    .bodyToMono(String.class)
+                    .block();
+
+            log.info("✅ Posted review to PR #{}", prNumber);
+        } catch (Exception e) {
+            log.error("❌ Failed to post review to PR #{}: {}", prNumber, e.getMessage());
+        }
+
     }
 
 }

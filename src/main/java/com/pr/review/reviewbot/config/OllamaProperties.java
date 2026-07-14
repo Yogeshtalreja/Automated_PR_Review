@@ -12,6 +12,6 @@ public class OllamaProperties {
 
     private String baseUrl;
     private String model;
-
+    private String embeddingModel;
 
 }

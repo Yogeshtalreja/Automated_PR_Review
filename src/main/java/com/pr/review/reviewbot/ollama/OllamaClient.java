@@ -33,12 +33,13 @@ public class OllamaClient {
     }
 
 
-    public List<ReviewComment> reviewCode(String filename, String patch) {
-        log.debug("Sending diff to Ollama for review");
+    public List<ReviewComment> reviewCode(
+            String filename, String patch, String ragContext) {
+
+        log.info("Sending {} to Ollama with RAG context", filename);
 
         OllamaChatRequest request = OllamaChatRequest.builder()
                 .model(ollamaProperties.getModel())
-                .format("json")
                 .stream(false)
                 .messages(List.of(
                         OllamaChatRequest.Message.builder()
@@ -47,7 +48,8 @@ public class OllamaClient {
                                 .build(),
                         OllamaChatRequest.Message.builder()
                                 .role("user")
-                                .content(promptBuilder.buildUserPrompt(filename, patch))
+                                .content(promptBuilder.buildUserPrompt(
+                                        filename, patch, ragContext))
                                 .build()
                 ))
                 .build();
@@ -59,37 +61,62 @@ public class OllamaClient {
                 .bodyToMono(OllamaChatResponse.class)
                 .block();
 
-        if (response == null || response.getMessage() == null || response.getMessage().getContent() == null) {
-            log.warn("Received empty Ollama response for file {}", filename);
-            return List.of();
-        }
+        log.info("Ollam Request {} with RAG context", request);
+        log.info("Ollam Response {} with RAG context", response);
+
 
         return parseComments(response.getMessage().getContent());
     }
 
     private List<ReviewComment> parseComments(String content) {
+        if (content == null || content.isBlank()) {
+            return List.of();
+        }
+
         try {
+            // Step 1 — Remove markdown backticks
             String cleaned = content
-                    .replaceAll("```json", "")
+                    .replaceAll("(?s)```json", "")
                     .replaceAll("```", "")
                     .trim();
 
-            // Handle single object instead of array
-            if (cleaned.startsWith("{")) {
-                log.debug("Model returned single object, wrapping in array");
-                cleaned = "[" + cleaned + "]";
-            }
-
-            // Remove trailing commas before } or ] — common LLM mistake
+            // Step 2 — Fix trailing commas before } or ]
             cleaned = cleaned
                     .replaceAll(",\\s*}", "}")
                     .replaceAll(",\\s*]", "]");
 
-            return objectMapper.readValue(cleaned,
+            // Step 3 — Merge multiple arrays into one
+            cleaned = cleaned
+                    .replaceAll("\\]\\s*\\[", ",")
+                    .trim();
+
+            // Step 4 — Wrap single object in array
+            if (cleaned.startsWith("{")) {
+                cleaned = "[" + cleaned + "]";
+            }
+
+            // Step 5 — Ensure starts with [ and ends with ]
+            if (!cleaned.startsWith("[")) {
+                int start = cleaned.indexOf("[");
+                if (start != -1) cleaned = cleaned.substring(start);
+            }
+            if (!cleaned.endsWith("]")) {
+                int end = cleaned.lastIndexOf("]");
+                if (end != -1) cleaned = cleaned.substring(0, end + 1);
+            }
+
+            log.debug("Cleaned JSON: {}", cleaned);
+
+            List<ReviewComment> result = objectMapper.readValue(cleaned,
                     new TypeReference<List<ReviewComment>>() {});
+
+            log.debug("Parsed {} comments successfully", result.size());
+            return result;
+
         } catch (Exception e) {
-            log.warn("Could not parse Ollama response as JSON array. Response starts with: {}",
-                    content.substring(0, Math.min(content.length(), 200)));
+            log.warn("Parse failed: {} | Raw content: {}",
+                    e.getMessage(),
+                    content.substring(0, Math.min(content.length(), 300)));
             return List.of();
         }
     }
@@ -115,4 +142,21 @@ public class OllamaClient {
 
         return Optional.empty();
     }
+
+    public List<Float> generateEmbedding(String text) {
+        EmbeddingRequest request = EmbeddingRequest.builder()
+                .model(ollamaProperties.getEmbeddingModel())
+                .prompt(text)
+                .build();
+
+        EmbeddingResponse response = ollamaWebClient.post()
+                .uri("/api/embeddings")
+                .bodyValue(request)
+                .retrieve()
+                .bodyToMono(EmbeddingResponse.class)
+                .block();
+
+        return response.getEmbedding();
+    }
+
 }

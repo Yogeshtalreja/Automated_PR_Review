@@ -4,6 +4,8 @@ import com.pr.review.reviewbot.diff.DiffParser;
 import com.pr.review.reviewbot.github.GithubClient;
 import com.pr.review.reviewbot.ollama.OllamaClient;
 import com.pr.review.reviewbot.ollama.ReviewComment;
+import com.pr.review.reviewbot.rag.CodeEmbedding;
+import com.pr.review.reviewbot.rag.RagService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,6 +22,8 @@ public class ReviewController {
 
     private final GithubClient gitHubClient;
     private final OllamaClient ollamaClient;
+    private final RagService ragService;
+
 
     @GetMapping("/review")
     public Map<String, Object> review(
@@ -28,12 +32,24 @@ public class ReviewController {
             @RequestParam int pr,
             @RequestParam(defaultValue = "info") String minSeverity) {
 
+        String fullRepoName = owner + "/" + repo;
+
         List<Map<String, Object>> fileReviews = gitHubClient
                 .fetchPRFiles(owner, repo, pr).stream()
                 .filter(f -> f.getPatch() != null)
                 .map(f -> {
+                    List<CodeEmbedding> relevantFiles = ragService.findRelevantFiles(
+                            fullRepoName,
+                            f.getFilename() + "\n" + f.getPatch(),
+                            5
+                    );
+
+                    // Build RAG context
+                    String ragContext = ragService.buildContext(relevantFiles);
+
+
                     List<ReviewComment> comments = ollamaClient
-                            .reviewCode(f.getFilename(), f.getPatch())
+                            .reviewCode(f.getFilename(), f.getPatch(), ragContext)
                             .stream()
                             .filter(c -> c.getComment() != null && !c.getComment().isBlank())
                             .filter(c -> severityLevel(c.getSeverity()) >= severityLevel(minSeverity))
